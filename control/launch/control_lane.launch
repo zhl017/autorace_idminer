@@ -1,0 +1,5 @@
+<launch>
+
+  <node pkg="control" type="control_lane" name="control_lane" output="screen"/>
+
+</launch>

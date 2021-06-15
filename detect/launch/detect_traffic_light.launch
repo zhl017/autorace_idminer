@@ -1,0 +1,11 @@
+<launch>
+
+    <arg name="rqt_mode" default="no" doc="rqt_mode type [yes, no]"/>
+
+    <node pkg="detect" type="detect_traffic_light" name="detect_traffic_light" output="screen">
+        <rosparam command="load" file="$(find detect)/yaml/traffic_light.yaml"/>
+        <param if="$(eval rqt_mode == 'yes')" name="/is_rqt_mode" value="True"/>
+        <param if="$(eval rqt_mode == 'no')" name="/is_rqt_mode" value="False"/>
+    </node>
+
+</launch>

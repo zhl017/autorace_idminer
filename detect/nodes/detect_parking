@@ -1,0 +1,321 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+################################################################################
+# Copyright 2018 ROBOTIS CO., LTD.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+
+# Author: Leon Jung, Gilbert
+
+import rospy, math
+import numpy as np
+import os
+import cv2
+from enum import Enum
+from std_msgs.msg import UInt8, Float64
+from sensor_msgs.msg import CompressedImage, LaserScan
+from cv_bridge import CvBridge, CvBridgeError
+from nav_msgs.msg import Odometry
+from turtlebot3_autorace_msgs.msg import MovingParam
+
+class DetectSign():
+    def __init__(self):
+        self.fnPreproc()
+
+        # subscribes compressed image
+        # self.sub_image_original = rospy.Subscriber('/usb_cam/image_raw/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
+        self.sub_scan_obstacle = rospy.Subscriber('/scan', LaserScan, self.cbScanObstacle, queue_size=1)
+
+
+        # publishes next mission
+        self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
+        self.pub_mission_step = rospy.Publisher('/mission/construction', UInt8, queue_size=1)
+        self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
+        self.pub_fake_lane = rospy.Publisher('/control/lane', Float64, queue_size=1)
+        self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
+
+        # publishes traffic sign image in compressed type 
+        self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
+
+
+        self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
+        self.ParkingStep = Enum('ParkingStep', 'default start park lane end')
+        self.current_step = self.ParkingStep.default.value
+        
+        self.cvBridge = CvBridge()
+        self.counter = 1
+
+        self.is_saw_construction = False
+        self.is_obstacle_detected = False
+        self.is_moving_complete = False
+
+    def cbMovingComplete(self, data):
+        self.is_moving_complete = True
+
+    def cbScanObstacle(self, scan):
+        angle_scan = 25
+        scan_start = 0 - angle_scan
+        scan_end = 0 + angle_scan
+        threshold_distance = 0.25
+        is_obstacle_detected = False
+
+        for i in range(scan_start, scan_end):
+            if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.01:
+                is_obstacle_detected = True
+        
+        self.is_obstacle_detected = is_obstacle_detected
+
+    def fnPreproc(self):
+        # Initiate SIFT detector
+        self.sift = cv2.xfeatures2d.SIFT_create()
+
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        dir_path = dir_path.replace('detect/nodes', 'detect/')
+        dir_path += 'image/'
+
+        self.img_construction = cv2.imread(dir_path + 'parking.png', 0)
+        self.kp_construction, self.des_constuction = self.sift.detectAndCompute(self.img_construction, None)
+
+        FLANN_INDEX_KDTREE = 0
+        index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+        search_params = dict(checks = 50)
+
+        self.flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+    def fnCalcMSE(self, arr1, arr2):
+            squared_diff = (arr1 - arr2) ** 2
+            sum = np.sum(squared_diff)
+            num_all = arr1.shape[0] * arr1.shape[1] #cv_image_input and 2 should have same shape
+            err = sum / num_all
+            return err
+
+    def cbFindTrafficSign(self, image_msg):
+        # drop the frame to 1/5 (6fps) because of the processing speed. This is up to your computer's operating power.
+        # if self.counter % 3 != 0:
+        #     self.counter += 1
+        #     return
+        # else:
+        #     self.counter = 1
+
+        #converting compressed image to opencv image
+        np_arr = np.frombuffer(image_msg.data, np.uint8)
+        cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+
+        MIN_MATCH_COUNT = 9 #9
+        MIN_MSE_DECISION = 50000
+
+        # find the keypoints and descriptors with SIFT
+        kp1, des1 = self.sift.detectAndCompute(cv_image_input,None)
+        image_out_num = 1
+
+        # construction
+        if self.is_saw_construction == False:
+            matches = self.flann.knnMatch(des1,self.des_constuction,k=2)
+            good = []
+            for m,n in matches:
+                if m.distance < 0.7*n.distance:
+                    good.append(m)
+            if len(good)>MIN_MATCH_COUNT:
+                src_pts = np.float32([kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
+                dst_pts = np.float32([self.kp_construction[m.trainIdx].pt for m in good]).reshape(-1,1,2)
+
+                M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+                matches = mask.ravel().tolist()
+
+                mse = self.fnCalcMSE(src_pts, dst_pts)
+                if mse < MIN_MSE_DECISION:
+                    rospy.loginfo("detect constrcution")
+                    image_out_num = 2
+                    self.is_saw_construction = True
+
+        if image_out_num == 1:
+            # publishes traffic sign image in compressed type
+            self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(cv_image_input, "jpg"))
+            
+        elif image_out_num == 2:
+            draw_params = dict(matchColor = (255,0,0), # draw matches in green color
+                            singlePointColor = None,
+                            matchesMask = matches, # draw only inliers
+                            flags = 2)
+
+            fianl = cv2.drawMatches(cv_image_input,kp1,self.img_construction,self.kp_construction,good,None,**draw_params)
+
+            # publishes traffic sign image in compressed type
+            self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(fianl, "jpg"))
+
+        if self.is_obstacle_detected == True:
+            
+            msg_pub_max_vel = Float64()
+            msg_pub_max_vel.data = 0.0
+            self.pub_max_vel.publish(msg_pub_max_vel)
+
+            self.current_step = self.ConstructionStep.start.value
+            self.pub_mission_step.publish(self.current_step)
+
+            rospy.sleep(3)
+
+            rospy.loginfo("doing motion_lf")
+            msg_moving = MovingParam()
+            msg_moving.moving_type=2
+            msg_moving.moving_value_angular=90
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_str")
+            msg_moving.moving_type= 4
+            msg_moving.moving_value_angular=0.0
+            msg_moving.moving_value_linear=0.26
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_ri")
+            msg_moving.moving_type=3
+            msg_moving.moving_value_angular=90
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_str2")
+            msg_moving.moving_type= 4
+            msg_moving.moving_value_angular=0.0
+            msg_moving.moving_value_linear=0.45
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_ri2")
+            msg_moving.moving_type=3
+            msg_moving.moving_value_angular=90
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_str3")
+            msg_moving.moving_type= 4
+            msg_moving.moving_value_angular=0.0
+            msg_moving.moving_value_linear=0.22
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_lf2")
+            msg_moving.moving_type=2
+            msg_moving.moving_value_angular=90
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_str4")
+            msg_moving.moving_type=4
+            msg_moving.moving_value_angular=0.0
+            msg_moving.moving_value_linear=0.40
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
+
+            rospy.loginfo("doing motion_lf3")
+            msg_moving.moving_type=2
+            msg_moving.moving_value_angular=80
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            # rospy.sleep(1)
+
+            # msg_moving.moving_type=4
+            # msg_moving.moving_value_angular=0.0
+            # msg_moving.moving_value_linear=0.5
+            # self.pub_moving.publish(msg_moving)
+            # while True:
+            #     if self.is_moving_complete == True:
+            #         break
+         
+            # self.is_moving_complete = False
+
+            rospy.sleep(3)
+            
+            self.pub_mission.publish(self.Mission.Parking.value)
+
+
+    def main(self):
+        rospy.spin()
+
+if __name__ == '__main__':
+    rospy.init_node('detect_construction')
+    node = DetectSign()
+    node.main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

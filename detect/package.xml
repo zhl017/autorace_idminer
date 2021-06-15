@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>detect</name>
+  <version>0.0.0</version>
+  <description>
+    Autorace Detect Process
+  </description>
+
+  <maintainer email="zhl017@todo.todo">zhl017</maintainer>
+
+  <license>Apache 2.0</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  
+  <depend>dynamic_reconfigure</depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python-opencv</exec_depend>
+  <exec_depend>python-numpy</exec_depend>
+  <exec_depend>python-enum34</exec_depend>
+
+</package>

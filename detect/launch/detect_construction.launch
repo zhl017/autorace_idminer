@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="detect" type="detect_construction" name="detect_construction" output="screen"/>
+    
+</launch>
