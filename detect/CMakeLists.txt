@@ -8,7 +8,7 @@ catkin_python_setup()
 generate_dynamic_reconfigure_options(
 	cfg/DetectLane.cfg
 	cfg/DetectTrafficLight.cfg
-#   cfg/DynReconf2.cfg
+	cfg/DetectLevel.cfg
 )
 
 catkin_package(CATKIN_DEPENDS dynamic_reconfigure)
@@ -18,6 +18,9 @@ catkin_install_python(PROGRAMS
 	nodes/detect_traffic_light
 	nodes/detect_intersection
 	nodes/detect_construction
+	nodes/detect_parking
+	nodes/detect_level
+	nodes/detect_tunnel
  	DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="core" type="core_node_mission" name="core_node_mission" output="screen" />
+
+</launch>

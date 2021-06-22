@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="detect" type="detect_parking" name="detect_parking" output="screen"/>
+    
+</launch>

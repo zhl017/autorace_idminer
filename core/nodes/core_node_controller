@@ -36,26 +36,39 @@ class CoreNodeController():
         self.sub_mission = rospy.Subscriber('/mission', UInt8, self.cbReceiveMode, queue_size=1)
         self.sub_mission_step = rospy.Subscriber('/mission/intertsection', UInt8, self.cbReceiveStep, queue_size=1)
         self.sub_mission_step1 = rospy.Subscriber('/mission/construction', UInt8, self.cbReceiveStep1, queue_size=1)
+        self.sub_mission_parking = rospy.Subscriber('/mission/parking', UInt8, self.cbReceiveStep_parking, queue_size=1)
+        self.sub_mission_level = rospy.Subscriber('/mission/level', UInt8, self.cbReceiveStep_level, queue_size=1)
+        self.sub_mission_tunnel = rospy.Subscriber('/mission/tunnel', UInt8, self.cbReceiveStep_tunnel, queue_size=1)
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
         self.IntersectionStep = Enum('IntersectionStep', 'default start turn lane end')
         self.ConstructionStep = Enum('ConstructionStep', 'default start turn lane end')
+        self.ParkingStep = Enum('ParkingStep', 'default start park lane end')
+        self.LevelCrossingStep = Enum('LevelCrossingStep', 'default start turn lane end')
+        self.TunnelStep = Enum('TunnelStep', 'default start turn lane end')
 
-        self.Launcher = Enum('Launcher', 'launch_detect_lane launch_detect_traffic_light launch_control_lane launch_detect_intersection launch_control_moving launch_detect_construction')
+        self.Launcher = Enum('Launcher', 'launch_detect_lane launch_detect_traffic_light launch_control_lane launch_detect_intersection launch_control_moving launch_detect_construction launch_detect_parking launch_detect_level launch_detect_tunnel launch_control_tunnel')
 
         # 預設空任務
         self.is_triggered = False
         self.current_mode = self.Mission.Idle.value
         self.current_step = self.IntersectionStep.default.value
         self.current_step1 = self.ConstructionStep.default.value
+        self.current_step_parking = self.ParkingStep.default.value
+        self.current_step_level = self.LevelCrossingStep.default.value
+        self.current_step_tunnel = self.TunnelStep.default.value
 
         self.launch_detect_lane_launched = False
         self.launch_detect_traffic_light_launched = False
         self.launch_detect_intersection_launched = False
         self.launch_detect_construction_launched = False
+        self.launch_detect_parking_launched = False
+        self.launch_detect_level_launched = False
+        self.launch_detect_tunnel_launched = False
 
         self.launch_control_lane_launched = False
         self.launch_control_moving_launched = False
+        self.launch_control_tunnel_launched = False
 
         self.uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
         
@@ -81,6 +94,17 @@ class CoreNodeController():
         self.current_step1 = mode_msg.data
         self.is_triggered = True
 
+    def cbReceiveStep_parking(self, mode_msg):
+        self.current_step_parking = mode_msg.data
+        self.is_triggered = True
+
+    def cbReceiveStep_level(self, mode_msg):
+        self.current_step_level = mode_msg.data
+        self.is_triggered = True
+
+    def cbReceiveStep_tunnel(self, mode_msg):
+        self.current_step_tunnel = mode_msg.data
+        self.is_triggered = True
 
     def fnControlNode(self):
         # traffic_light
@@ -93,6 +117,8 @@ class CoreNodeController():
         elif self.current_mode == self.Mission.Intersection.value:
             if self.current_step == self.IntersectionStep.default.value:
                 rospy.loginfo("New trigger for intersection")
+                self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
+
                 self.fnLaunch(self.Launcher.launch_detect_intersection.value, True)
                 self.fnLaunch(self.Launcher.launch_control_lane.value, True)
                 self.fnLaunch(self.Launcher.launch_control_moving.value, True)
@@ -117,6 +143,7 @@ class CoreNodeController():
         elif self.current_mode == self.Mission.Construction.value:
             if self.current_step1 == self.ConstructionStep.default.value:
                 rospy.loginfo("New trigger for construction")
+                
                 self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
                 self.fnLaunch(self.Launcher.launch_control_lane.value, True)
 
@@ -128,16 +155,46 @@ class CoreNodeController():
                 
         # parking
         elif self.current_mode == self.Mission.Parking.value:
-            rospy.loginfo("New trigger for parking")
-            self.fnLaunch(self.Launcher.launch_control_lane.value, True)
+            if self.current_step_parking == self.ParkingStep.default.value:
+                rospy.loginfo("New trigger for parking")
+                self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
+                self.fnLaunch(self.Launcher.launch_control_lane.value, True)
+
+                self.fnLaunch(self.Launcher.launch_control_moving.value, True)
+                self.fnLaunch(self.Launcher.launch_detect_parking.value, True)
+                self.fnLaunch(self.Launcher.launch_detect_construction.value, False)
+
+            elif self.current_step_parking == self.ParkingStep.start.value:
+                self.fnLaunch(self.Launcher.launch_control_lane.value, False)
 
         # level_crossing
         elif self.current_mode == self.Mission.LevelCrossing.value:
-            rospy.loginfo("New trigger for level_crossing")
+            if self.current_step_level == self.LevelCrossingStep.default.value:
+                rospy.loginfo("New trigger for level_crossing")
+                self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
+                self.fnLaunch(self.Launcher.launch_control_lane.value, True)
+
+                self.fnLaunch(self.Launcher.launch_detect_parking.value, False)
+                self.fnLaunch(self.Launcher.launch_detect_level.value, True)   
 
         # tunnel
         elif self.current_mode == self.Mission.Tunnel.value:
-            rospy.loginfo("New trigger for tunnel")
+            if self.current_step_tunnel == self.TunnelStep.default.value:
+                rospy.loginfo("New trigger for tunnel")
+                self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
+                self.fnLaunch(self.Launcher.launch_control_lane.value, True)
+
+                self.fnLaunch(self.Launcher.launch_detect_level.value, False)
+                self.fnLaunch(self.Launcher.launch_detect_tunnel.value, True)
+            elif self.current_step_tunnel == self.TunnelStep.start.value:
+                self.fnLaunch(self.Launcher.launch_control_lane.value, False)
+                self.fnLaunch(self.Launcher.launch_control_tunnel.value, True)
+
+            elif self.current_step_tunnel == self.TunnelStep.end.value:
+                self.fnLaunch(self.Launcher.launch_control_lane.value, True)
+                    
+
+
 
         self.is_triggered = False
 
@@ -232,6 +289,69 @@ class CoreNodeController():
                     self.launch_detect_construction.shutdown()
                 else:
                     pass
+        elif launch_num == self.Launcher.launch_detect_parking.value:
+            if is_start == True:
+                if self.launch_detect_parking_launched == False:
+                    self.launch_detect_parking = roslaunch.scriptapi.ROSLaunch()
+                    self.launch_detect_parking = roslaunch.parent.ROSLaunchParent(self.uuid, [self.ros_package_path + "detect/launch/detect_parking.launch"])
+                    self.launch_detect_parking_launched = True
+                    self.launch_detect_parking.start()
+                else:
+                    pass
+            else:
+                if self.launch_detect_parking_launched == True:
+                    self.launch_detect_parking_launched = False
+                    self.launch_detect_parking.shutdown()
+                else:
+                    pass   
+
+        elif launch_num == self.Launcher.launch_detect_level.value:
+            if is_start == True:
+                if self.launch_detect_level_launched == False:
+                    self.launch_detect_level = roslaunch.scriptapi.ROSLaunch()
+                    self.launch_detect_level = roslaunch.parent.ROSLaunchParent(self.uuid, [self.ros_package_path + "detect/launch/detect_level.launch"])     
+                    self.launch_detect_level_launched = True
+                    self.launch_detect_level.start()
+                else:
+                    pass
+            else:
+                if self.launch_detect_level_launched == True:
+                    self.launch_detect_level_launched = False
+                    self.launch_detect_level.shutdown()
+                else:
+                    pass     
+
+        elif launch_num == self.Launcher.launch_detect_tunnel.value:
+            if is_start == True:
+                if self.launch_detect_tunnel_launched == False:
+                    self.launch_detect_tunnell = roslaunch.scriptapi.ROSLaunch()
+                    self.launch_detect_tunnel = roslaunch.parent.ROSLaunchParent(self.uuid, [self.ros_package_path + "detect/launch/detect_tunnel.launch"])     
+                    self.launch_detect_tunnel_launched = True
+                    self.launch_detect_tunnel.start()
+                else:
+                    pass
+            else:
+                if self.launch_detect_tunnel_launched == True:
+                    self.launch_detect_tunnel_launched = False
+                    self.launch_detect_tunnel.shutdown()
+                else:
+                    pass  
+        elif launch_num == self.Launcher.launch_control_tunnel.value:
+            if is_start == True:
+                if self.launch_control_tunnel_launched == False:
+                    self.launch_control_tunnel = roslaunch.scriptapi.ROSLaunch()
+                    self.launch_control_tunnel = roslaunch.parent.ROSLaunchParent(self.uuid, [self.ros_package_path + "control/launch/control_tunnel.launch"])     
+                    self.launch_control_tunnel_launched = True
+                    self.launch_control_tunnel.start()
+                else:
+                    pass
+            else:
+                if self.launch_control_tunnel_launched == True:
+                    self.launch_control_tunnel_launched = False
+                    self.launch_control_tunnel.shutdown()
+                else:
+                    pass            
+            
 
 
     def main(self):
