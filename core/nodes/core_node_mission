@@ -54,11 +54,11 @@ class ControlMission():
 
     def loadMissionModel(self):
         model_dir_path = os.path.dirname(os.path.realpath(__file__))
-        model_dir_path = model_dir_path.replace('/core/nodes',
+        model_dir_path = model_dir_path.replace('/autorace_idminer/core/nodes',
                                               '/turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_autorace_2020')
 
         turtlebot_dir_path = os.path.dirname(os.path.realpath(__file__))
-        turtlebot_dir_path = turtlebot_dir_path.replace('/core/nodes',
+        turtlebot_dir_path = turtlebot_dir_path.replace('/autorace_idminer/core/nodes',
                                                 '/turtlebot3_simulations/turtlebot3_gazebo/models/turtlebot3_burger/model.sdf')
 
         red_light_path = model_dir_path + '/traffic_light_red/model.sdf'
