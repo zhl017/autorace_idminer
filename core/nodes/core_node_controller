@@ -34,8 +34,8 @@ class CoreNodeController():
 
         # Subscriber
         self.sub_mission = rospy.Subscriber('/mission', UInt8, self.cbReceiveMode, queue_size=1)
-        self.sub_mission_step = rospy.Subscriber('/mission/intertsection', UInt8, self.cbReceiveStep, queue_size=1)
-        self.sub_mission_step1 = rospy.Subscriber('/mission/construction', UInt8, self.cbReceiveStep1, queue_size=1)
+        self.sub_mission_intersection = rospy.Subscriber('/mission/intertsection', UInt8, self.cbReceiveStep_intersection, queue_size=1)
+        self.sub_mission_construction = rospy.Subscriber('/mission/construction', UInt8, self.cbReceiveStep_construction, queue_size=1)
         self.sub_mission_parking = rospy.Subscriber('/mission/parking', UInt8, self.cbReceiveStep_parking, queue_size=1)
         self.sub_mission_level = rospy.Subscriber('/mission/level', UInt8, self.cbReceiveStep_level, queue_size=1)
         self.sub_mission_tunnel = rospy.Subscriber('/mission/tunnel', UInt8, self.cbReceiveStep_tunnel, queue_size=1)
@@ -52,8 +52,8 @@ class CoreNodeController():
         # 預設空任務
         self.is_triggered = False
         self.current_mode = self.Mission.Idle.value
-        self.current_step = self.IntersectionStep.default.value
-        self.current_step1 = self.ConstructionStep.default.value
+        self.current_step_intersection = self.IntersectionStep.default.value
+        self.current_step_construction = self.ConstructionStep.default.value
         self.current_step_parking = self.ParkingStep.default.value
         self.current_step_level = self.LevelCrossingStep.default.value
         self.current_step_tunnel = self.TunnelStep.default.value
@@ -86,12 +86,12 @@ class CoreNodeController():
         self.current_mode = mode_msg.data
         self.is_triggered = True
 
-    def cbReceiveStep(self, mode_msg):
-        self.current_step = mode_msg.data
+    def cbReceiveStep_intersection(self, mode_msg):
+        self.current_step_intersection = mode_msg.data
         self.is_triggered = True
 
-    def cbReceiveStep1(self, mode_msg):
-        self.current_step1 = mode_msg.data
+    def cbReceiveStep_construction(self, mode_msg):
+        self.current_step_construction = mode_msg.data
         self.is_triggered = True
 
     def cbReceiveStep_parking(self, mode_msg):
@@ -115,7 +115,7 @@ class CoreNodeController():
 
         # intersection
         elif self.current_mode == self.Mission.Intersection.value:
-            if self.current_step == self.IntersectionStep.default.value:
+            if self.current_step_intersection == self.IntersectionStep.default.value:
                 rospy.loginfo("New trigger for intersection")
                 self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
 
@@ -125,10 +125,10 @@ class CoreNodeController():
 
                 self.fnLaunch(self.Launcher.launch_detect_traffic_light.value, False)
                 
-            elif self.current_step == self.IntersectionStep.start.value:
+            elif self.current_step_intersection == self.IntersectionStep.start.value:
                 self.fnLaunch(self.Launcher.launch_control_lane.value, False)
                 
-            elif self.current_step == self.IntersectionStep.turn.value:
+            elif self.current_step_intersection == self.IntersectionStep.turn.value:
                 self.fnLaunch(self.Launcher.launch_control_lane.value, True)
             #     self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
             #     self.fnLaunch(self.Launcher.launch_control_lane.value, True)
@@ -141,7 +141,7 @@ class CoreNodeController():
 
         # construction
         elif self.current_mode == self.Mission.Construction.value:
-            if self.current_step1 == self.ConstructionStep.default.value:
+            if self.current_step_construction == self.ConstructionStep.default.value:
                 rospy.loginfo("New trigger for construction")
                 
                 self.fnLaunch(self.Launcher.launch_detect_lane.value, True)
@@ -150,7 +150,7 @@ class CoreNodeController():
                 self.fnLaunch(self.Launcher.launch_detect_intersection.value, False)
                 self.fnLaunch(self.Launcher.launch_detect_construction.value, True)
 
-            elif self.current_step1 == self.ConstructionStep.start.value:
+            elif self.current_step_construction == self.ConstructionStep.start.value:
                 self.fnLaunch(self.Launcher.launch_control_lane.value, False)
                 
         # parking
