@@ -1,34 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-################################################################################
-# Copyright 2018 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Leon Jung, Gilbert
-
-import rospy, math
+import rospy, math, os, cv2, tf
 import numpy as np
-import os
-import cv2
-import tf
 from enum import Enum
 from std_msgs.msg import UInt8, Float64
-from sensor_msgs.msg import Image, CompressedImage
+from sensor_msgs.msg import CompressedImage
 from geometry_msgs.msg import Twist
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
 from detect.cfg import DetectLevelParamsConfig
@@ -99,27 +78,20 @@ class DetectSign():
         self.lightness_red_l = rospy.get_param("~lightness_red_l", 48)
         self.lightness_red_h = rospy.get_param("~lightness_red_h", 255)
 
-        self.rqt_mode = rospy.get_param("~is_rqt_mode", False)
+        self.calibration_mode = rospy.get_param("~calibration_mode", False)
 
-        if self.rqt_mode == True:
+        if self.calibration_mode == True:
             srv_image = Server(DetectLevelParamsConfig, self.cbGetDetectLevelParam)
         
         # subscribes compressed image
-        # self.sub_image_original = rospy.Subscriber('/usb_cam/image_raw/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_img = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbGetImage, queue_size = 1)
-        self.sub_level_crossing_order = rospy.Subscriber('/detect/level_crossing_order', UInt8, self.cbLevelCrossingOrder, queue_size=1)
-        self.sub_level_crossing_finished = rospy.Subscriber('/control/level_crossing_finished', UInt8, self.cbLevelCrossingFinished, queue_size = 1)
-
+        # self.sub_img = rospy.Subscriber('/image_input', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_level_img = rospy.Subscriber('/image_input', CompressedImage, self.cbGetImage, queue_size=1)
 
         # publishes 
         self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
         self.pub_mission_level = rospy.Publisher('/mission/level', UInt8, queue_size=1)
         self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
         self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
-        self.pub_level_crossing_return = rospy.Publisher('/detect/level_crossing_stamped', UInt8, queue_size=1)
-        self.pub_parking_start = rospy.Publisher('/control/level_crossing_start', UInt8, queue_size = 1)
-
 
         # publishes traffic sign image in compressed type 
         self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
@@ -127,15 +99,15 @@ class DetectSign():
         self.pub_image_color_filtered = rospy.Publisher('/detect/image_level_color_filtered/compressed', CompressedImage, queue_size = 1)
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
-        self.LevelCrossingStep = Enum('LevelCrossingStep', 'default start stop go end')
-        #self.current_step_level = self.LevelCrossingStep.default.value
+        self.LevelCrossingStep = Enum('LevelCrossingStep', 'default process')
         
         self.cvBridge = CvBridge()
         self.cv_image = None
         self.counter = 1
         self.stop_bar_count = 0
-
-        self.is_level_crossing_finished = False
+        self.is_level_detected = False
+        self.is_level_close = False
+        self.is_level_opened = False
 
         self.is_saw_stop = False
 
@@ -159,18 +131,20 @@ class DetectSign():
         return config
 
     def cbGetImage(self, image_msg):
+        #converting compressed image to opencv image
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         self.cv_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # self.cv_image = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
     def cbMovingComplete(self, data):
         self.is_moving_complete = True
 
 
-
     def fnPreproc(self):
         # Initiate SIFT detector
-        self.sift = cv2.xfeatures2d.SIFT_create()
+        self.sift = cv2.SIFT_create()
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dir_path = dir_path.replace('detect/nodes', 'detect/')
@@ -204,8 +178,10 @@ class DetectSign():
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # cv_image_input = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
-        MIN_MATCH_COUNT = 9 #9
+        MIN_MATCH_COUNT = 5 #9
         MIN_MSE_DECISION = 50000
 
         # find the keypoints and descriptors with SIFT
@@ -247,14 +223,9 @@ class DetectSign():
 
             # publishes traffic sign image in compressed type
             self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(final_stop, "jpg"))
-        
-    def cbLevelCrossingOrder(self, order):
-        pub_level_crossing_return = UInt8()
 
-        if self.counter == 2:
-
-            self.current_step_level = self.LevelCrossingStep.start.value
-            self.pub_mission_level.publish(self.current_step_level)
+        # level process    
+        if self.is_saw_stop == True:
 
             rospy.loginfo("[LevelCrossing] Slow")
             
@@ -283,17 +254,14 @@ class DetectSign():
                     pass
             
             rospy.loginfo("[LevelCrossing] GO")
-            msg_pub_max_vel.data = 0.22
+            msg_pub_max_vel.data = 0.2
             self.pub_max_vel.publish(msg_pub_max_vel)
 
             rospy.loginfo("[LevelCrossing] FINISH")
 
-
-            self.current_mission = self.Mission.Tunnel.value
-            self.pub_mission.publish(self.current_mission)
+            # go to next mission
+            self.pub_mission.publish(self.Mission.Tunnel.value)
             self.counter = 1
-
-        self.pub_level_crossing_return.publish(pub_level_crossing_return)
         
     def fnFindLevel(self):
         cv_image_mask = self.fnMaskRedOfLevel()
@@ -332,7 +300,6 @@ class DetectSign():
 
         return mask
 
-
     def fnFindRectOfLevel(self, mask):
         is_level_detected = False
         is_level_close = False
@@ -350,11 +317,11 @@ class DetectSign():
 
         # Filter by Circularity
         params.filterByCircularity = True
-        params.minCircularity = 0.5
+        params.minCircularity = 0.3
 
         # Filter by Convexity
         params.filterByConvexity = True
-        params.minConvexity = 0.8
+        params.minConvexity = 0.9
 
         det=cv2.SimpleBlobDetector_create(params)
         keypts=det.detect(mask)
@@ -389,39 +356,35 @@ class DetectSign():
             is_rects_linear = fnCheckLinearity(point1, point2, point3)
             is_rects_dist_equal = fnCheckDistanceIsEqual(point1, point2, point3)
 
-            if is_rects_linear == True or is_rects_dist_equal == True:
+            if (is_rects_linear == True or is_rects_dist_equal == True) and self.is_level_opened == False:
                 # finding the angle of line
-                distance_bar2car = 100 / fnCalcDistanceDot2Dot(point1[0], point1[1], point2[0], point2[1])
+                distance_bar2car = 50 / fnCalcDistanceDot2Dot(point1[0], point1[1], point2[0], point2[1])
                 
                 # publishing topic
-                self.stop_bar_count = 4
+                # self.stop_bar_count = 50
                 if distance_bar2car > 1.0:
                     rospy.loginfo("detect")
-                    is_level_detected = True
-                    self.stop_bar_state = 'slowdown'
+                    self.is_level_detected = True
                     self.state = "detected"
                     msg_pub_max_vel = Float64()
-                    msg_pub_max_vel.data = 0.05
+                    msg_pub_max_vel.data = 0.01
                     self.pub_max_vel.publish(msg_pub_max_vel)    
 
                 else:
                     rospy.loginfo("stop")
-                    is_level_close = True
-                    self.stop_bar_state = 'stop'
+                    self.is_level_close = True
                     msg_pub_max_vel = Float64()
                     msg_pub_max_vel.data = 0.00
                     self.pub_max_vel.publish(msg_pub_max_vel)
 
-        if len(keypts) < 1 and self.stop_bar_count ==4 :
+        elif len(keypts) < 1 and (self.is_level_detected == True or self.is_level_close == True):
             self.stop_bar_count = 0
-            is_level_opened = True
-            self.stop_bar_state = 'go'
-            rospy.loginfo("go")      
+            self.is_level_opened = True
+            rospy.loginfo("go")
             msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.22
-            self.pub_max_vel.publish(msg_pub_max_vel)      
-            self.current_mission = self.Mission.Tunnel.value
-            self.pub_mission.publish(self.current_mission)
+            msg_pub_max_vel.data = 0.2
+            self.pub_max_vel.publish(msg_pub_max_vel)
+            self.pub_mission.publish(self.Mission.Tunnel.value)
 
         #if self.stop_bar_count > 0:
         #    self.stop_bar_count -= 1
@@ -432,12 +395,7 @@ class DetectSign():
         # publishes level image in compressed type
         self.pub_image_level.publish(self.cvBridge.cv2_to_compressed_imgmsg(frame, "jpg"))
 
-        return is_level_detected, is_level_close, is_level_opened
-
-    def cbLevelCrossingFinished(self, level_crossing_finished_msg):
-        self.is_level_crossing_finished = True
-
-        
+        return is_level_detected, is_level_close, is_level_opened        
 
 
     def main(self):

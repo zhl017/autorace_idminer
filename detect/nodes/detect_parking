@@ -1,59 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-################################################################################
-# Copyright 2018 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Leon Jung, Gilbert
-
-import rospy, math
+import rospy, os, cv2, math
 import numpy as np
-import os
-import cv2
 from enum import Enum
 from std_msgs.msg import UInt8, Float64
 from sensor_msgs.msg import CompressedImage, LaserScan
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
 from turtlebot3_autorace_msgs.msg import MovingParam
 
 class DetectSign():
     def __init__(self):
-        self.fnPreproc()
-
-        # subscribes compressed image
-        # self.sub_image_original = rospy.Subscriber('/usb_cam/image_raw/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
-        self.sub_scan_obstacle = rospy.Subscriber('/scan', LaserScan, self.cbScanObstacle, queue_size=1)
-
-
-        # publishes next mission
-        self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
-        self.pub_mission_parking = rospy.Publisher('/mission/parking', UInt8, queue_size=1)
-        self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
-        self.pub_fake_lane = rospy.Publisher('/control/lane', Float64, queue_size=1)
-        self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
-
-        # publishes traffic sign image in compressed type 
-        self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
-
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
-        self.ParkingStep = Enum('ParkingStep', 'default start park lane end')
+        self.ParkingStep = Enum('ParkingStep', 'default process')
         self.current_step_parking = self.ParkingStep.default.value
         
         self.cvBridge = CvBridge()
@@ -64,6 +26,25 @@ class DetectSign():
         self.is_moving_complete = False
         self.is_obstacle_detected_R = False
         self.is_obstacle_detected_L = False
+
+        self.fnPreproc()
+
+        # subscribes compressed image
+        self.sub_img = rospy.Subscriber('/image_input', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
+        self.sub_scan_obstacle = rospy.Subscriber('/scan', LaserScan, self.cbScanObstacle, queue_size=1)
+
+
+        # publishes next mission
+        self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
+        self.pub_mission_parking = rospy.Publisher('/mission/parking', UInt8, queue_size=1)
+        self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
+        self.pub_fake_lane = rospy.Publisher('/control/lane', Float64, queue_size=1)
+        self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
+        self.pub_cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+
+        # publishes traffic sign image in compressed type 
+        self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
 
 
     def cbMovingComplete(self, data):
@@ -96,7 +77,7 @@ class DetectSign():
 
     def fnPreproc(self):
         # Initiate SIFT detector
-        self.sift = cv2.xfeatures2d.SIFT_create()
+        self.sift = cv2.SIFT_create() #xfeatures2d.SIFT_create()
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dir_path = dir_path.replace('detect/nodes', 'detect/')
@@ -120,7 +101,7 @@ class DetectSign():
 
     def cbFindTrafficSign(self, image_msg):
         # drop the frame to 1/5 (6fps) because of the processing speed. This is up to your computer's operating power.
-        # if self.counter % 3 != 0:
+        # if self.counter % 2 != 0:
         #     self.counter += 1
         #     return
         # else:
@@ -130,6 +111,8 @@ class DetectSign():
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # cv_image_input = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
         MIN_MATCH_COUNT = 9 #9
         MIN_MSE_DECISION = 50000
@@ -157,7 +140,6 @@ class DetectSign():
                     rospy.loginfo("detect parking")
                     image_out_num = 2
                     self.is_saw_parking = True
-                    self.counter = 2
 
         if image_out_num == 1:
             # publishes traffic sign image in compressed type
@@ -174,23 +156,37 @@ class DetectSign():
             # publishes traffic sign image in compressed type
             self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(final_parking, "jpg"))
 
-        if self.is_saw_parking == True and self.counter == 2:
+        # parking process
+        if self.is_saw_parking == True:
 
-            self.current_step_parking = self.ParkingStep.start.value
-            self.pub_mission_parking.publish(self.current_step_parking)
+            self.pub_mission_parking.publish(self.ParkingStep.process.value)
 
             rospy.loginfo("[PARKING] MOTION...")
             msg_pub_max_vel = Float64()
             msg_pub_max_vel.data = 0.00
             self.pub_max_vel.publish(msg_pub_max_vel)
+            self.pub_cmd_vel.publish(Twist())
 
             rospy.sleep(3)
+            
+            rospy.loginfo("[PARKING] L")
+            msg_moving = MovingParam()
+            msg_moving.moving_type=2
+            msg_moving.moving_value_angular=2
+            msg_moving.moving_value_linear=0.0
+            self.pub_moving.publish(msg_moving)
+            while True:
+                if self.is_moving_complete == True:
+                    break
+            self.is_moving_complete = False
+
+            rospy.sleep(1)
 
             rospy.loginfo("[PARKING] S")
             msg_moving = MovingParam()
             msg_moving.moving_type= 4
             msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.8
+            msg_moving.moving_value_linear=0.75
             self.pub_moving.publish(msg_moving)
             while True:
                 if self.is_moving_complete == True:
@@ -202,7 +198,7 @@ class DetectSign():
             rospy.loginfo("[PARKING] L")
             msg_moving = MovingParam()
             msg_moving.moving_type=2
-            msg_moving.moving_value_angular=89
+            msg_moving.moving_value_angular=91
             msg_moving.moving_value_linear=0.0
             self.pub_moving.publish(msg_moving)
             while True:
@@ -275,7 +271,7 @@ class DetectSign():
 
                 rospy.loginfo("[PARKING] R")
                 msg_moving.moving_type= 3
-                msg_moving.moving_value_angular=89
+                msg_moving.moving_value_angular=90
                 msg_moving.moving_value_linear=0.0
                 self.pub_moving.publish(msg_moving)
                 while True:
@@ -325,7 +321,7 @@ class DetectSign():
 
                 rospy.loginfo("[PARKING] L")
                 msg_moving.moving_type= 2
-                msg_moving.moving_value_angular=89
+                msg_moving.moving_value_angular=90
                 msg_moving.moving_value_linear=0.0
                 self.pub_moving.publish(msg_moving)
                 while True:
@@ -361,11 +357,8 @@ class DetectSign():
 
             rospy.loginfo("[PARKING] FINISH...")
 
-            self.current_mission = self.Mission.LevelCrossing.value
-            self.pub_mission.publish(self.current_mission)
-            self.counter = 1
-
-        
+            # go to next mission
+            self.pub_mission.publish(self.Mission.LevelCrossing.value)
 
 
     def main(self):
@@ -375,22 +368,3 @@ if __name__ == '__main__':
     rospy.init_node('detect_parking')
     node = DetectSign()
     node.main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

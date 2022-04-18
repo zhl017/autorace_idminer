@@ -1,5 +1,7 @@
 <launch>
 
-    <node pkg="detect" type="detect_intersection" name="detect_intersection" output="screen"/>
+    <node pkg="detect" type="detect_intersection" name="detect_intersection" output="screen">
+        <remap from="/image_input" to="/camera/image/compressed"/>
+    </node>
     
 </launch>

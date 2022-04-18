@@ -1,10 +1,11 @@
 <launch>
-    <arg name="rqt_mode" default="no" doc="rqt_mode type [yes, no]"/>
+    <arg name="mode" default="action" doc="mode type [calibration, action]"/>
 
     <node pkg="detect" type="detect_level" name="detect_level" output="screen">
         <rosparam command="load" file="$(find detect)/yaml/level.yaml"/>
-        <param if="$(eval rqt_mode == 'yes')" name="/is_rqt_mode" value="True"/>
-        <param if="$(eval rqt_mode == 'no')" name="/is_rqt_mode" value="False"/>     
+        <param if="$(eval mode == 'calibration')" name="/calibration_mode" value="True"/>
+        <param if="$(eval mode == 'action')" name="/calibration_mode" value="False"/> 
+        <remap from="/image_input" to="/camera/image/compressed"/>
     </node>
 
 </launch>

@@ -1,20 +1,20 @@
 hue_red_l: 0
-hue_red_h: 26
-saturation_red_l: 239
+hue_red_h: 10
+saturation_red_l: 100
 saturation_red_h: 255
-lightness_red_l: 123
-lightness_red_h: 250
+lightness_red_l: 50
+lightness_red_h: 255
 
-hue_yellow_l: 19
-hue_yellow_h: 33
-saturation_yellow_l: 237
+hue_yellow_l: 20
+hue_yellow_h: 40
+saturation_yellow_l: 100
 saturation_yellow_h: 255
-lightness_yellow_l: 231
+lightness_yellow_l: 50
 lightness_yellow_h: 255
 
 hue_green_l: 40
-hue_green_h: 113
-saturation_green_l: 0
+hue_green_h: 100
+saturation_green_l: 200
 saturation_green_h: 255
-lightness_green_l: 131
+lightness_green_l: 50
 lightness_green_h: 255

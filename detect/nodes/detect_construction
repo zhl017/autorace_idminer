@@ -1,59 +1,35 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-################################################################################
-# Copyright 2018 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Leon Jung, Gilbert
-
-import rospy, math
+import rospy, os, cv2
 import numpy as np
-import os
-import cv2
 from enum import Enum
-from std_msgs.msg import UInt8, Float64
+from std_msgs.msg import UInt8, Float64, Bool
 from sensor_msgs.msg import CompressedImage, LaserScan
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 from nav_msgs.msg import Odometry
-from turtlebot3_autorace_msgs.msg import MovingParam
 
 class DetectSign():
     def __init__(self):
         self.fnPreproc()
 
         # subscribes compressed image
-        # self.sub_image_original = rospy.Subscriber('/usb_cam/image_raw/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
+        self.sub_img = rospy.Subscriber('/image_input', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
         self.sub_scan_obstacle = rospy.Subscriber('/scan', LaserScan, self.cbScanObstacle, queue_size=1)
-
 
         # publishes next mission
         self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
         self.pub_mission_step = rospy.Publisher('/mission/construction', UInt8, queue_size=1)
         self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
         self.pub_fake_lane = rospy.Publisher('/control/lane', Float64, queue_size=1)
-        self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
+        self.pub_lane_toggle = rospy.Publisher('/detect/lane_toggle', Bool, queue_size=1)
 
         # publishes traffic sign image in compressed type 
         self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
 
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
-        self.ConstructionStep = Enum('ConstructionStep', 'default start turn lane end')
+        self.ConstructionStep = Enum('ConstructionStep', 'default process')
         self.current_step = self.ConstructionStep.default.value
         
         self.cvBridge = CvBridge()
@@ -67,21 +43,23 @@ class DetectSign():
         self.is_moving_complete = True
 
     def cbScanObstacle(self, scan):
-        angle_scan = 25
+        # angle_scan = 25
+        angle_scan = 5
         scan_start = 0 - angle_scan
         scan_end = 0 + angle_scan
-        threshold_distance = 0.25
+        # threshold_distance = 0.25
+        threshold_distance = 0.4
         is_obstacle_detected = False
 
         for i in range(scan_start, scan_end):
-            if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.01:
+            if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.35:
                 is_obstacle_detected = True
         
         self.is_obstacle_detected = is_obstacle_detected
 
     def fnPreproc(self):
         # Initiate SIFT detector
-        self.sift = cv2.xfeatures2d.SIFT_create()
+        self.sift = cv2.SIFT_create()
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dir_path = dir_path.replace('detect/nodes', 'detect/')
@@ -105,7 +83,7 @@ class DetectSign():
 
     def cbFindTrafficSign(self, image_msg):
         # drop the frame to 1/5 (6fps) because of the processing speed. This is up to your computer's operating power.
-        # if self.counter % 3 != 0:
+        # if self.counter % 2 != 0:
         #     self.counter += 1
         #     return
         # else:
@@ -115,6 +93,8 @@ class DetectSign():
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # cv_image_input = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
         MIN_MATCH_COUNT = 9 #9
         MIN_MSE_DECISION = 50000
@@ -158,140 +138,32 @@ class DetectSign():
             # publishes traffic sign image in compressed type
             self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(fianl, "jpg"))
 
+        # construction process
         if self.is_obstacle_detected == True:
-            
-            msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.0
-            self.pub_max_vel.publish(msg_pub_max_vel)
+            self.pub_lane_toggle.publish(False)
+            rospy.loginfo('construction processing')
+            for x in range(0, 15):
+                self.pub_fake_lane.publish(400)
+                rospy.sleep(0.1)
+            for x in range(0, 14):
+                self.pub_fake_lane.publish(600)
+                rospy.sleep(0.1)
+            for x in range(0, 3):
+                self.pub_fake_lane.publish(500)
+                rospy.sleep(0.1)
+            for x in range(0, 17):
+                self.pub_fake_lane.publish(610)
+                rospy.sleep(0.1)
+            for x in range(0, 13):
+                self.pub_fake_lane.publish(400)
+                rospy.sleep(0.1)
+            self.pub_lane_toggle.publish(True)
+            rospy.loginfo('DONE')
+            rospy.loginfo('SLOW')
+            # self.pub_max_vel.publish(0.15)
 
-            self.current_step = self.ConstructionStep.start.value
-            self.pub_mission_step.publish(self.current_step)
-
-            rospy.sleep(3)
-
-            rospy.loginfo("doing motion_lf")
-            msg_moving = MovingParam()
-            msg_moving.moving_type=2
-            msg_moving.moving_value_angular=90
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_str")
-            msg_moving.moving_type= 4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.26
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_ri")
-            msg_moving.moving_type=3
-            msg_moving.moving_value_angular=90
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_str2")
-            msg_moving.moving_type= 4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.45
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_ri2")
-            msg_moving.moving_type=3
-            msg_moving.moving_value_angular=90
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_str3")
-            msg_moving.moving_type= 4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.22
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_lf2")
-            msg_moving.moving_type=2
-            msg_moving.moving_value_angular=90
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_str4")
-            msg_moving.moving_type=4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.40
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            rospy.sleep(1)
-
-            rospy.loginfo("doing motion_lf3")
-            msg_moving.moving_type=2
-            msg_moving.moving_value_angular=80
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
-
-            # rospy.sleep(1)
-
-            # msg_moving.moving_type=4
-            # msg_moving.moving_value_angular=0.0
-            # msg_moving.moving_value_linear=0.5
-            # self.pub_moving.publish(msg_moving)
-            # while True:
-            #     if self.is_moving_complete == True:
-            #         break
-         
-            # self.is_moving_complete = False
-
-            rospy.sleep(3)
-            
+            # go to next mission
             self.pub_mission.publish(self.Mission.Parking.value)
-
 
     def main(self):
         rospy.spin()

@@ -1,60 +1,37 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-################################################################################
-# Copyright 2018 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Leon Jung, Gilbert, Ashe Kim
-
-import rospy
-import math
+import rospy, os, cv2
 import numpy as np
-import os
-import cv2
 from enum import Enum
-from std_msgs.msg import UInt8, Float64
-from sensor_msgs.msg import Image, CompressedImage
-from cv_bridge import CvBridge, CvBridgeError
+from std_msgs.msg import UInt8, Float64, Bool
+from sensor_msgs.msg import CompressedImage
+from cv_bridge import CvBridge
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
-from turtlebot3_autorace_msgs.msg import MovingParam
 
 class DetectSign():
     def __init__(self):
         self.fnPreproc()
 
         # subscribes compressed image
-        # self.sub_image_original = rospy.Subscriber('/usb_cam/image_raw/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
-        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_img = rospy.Subscriber('/image_input', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
         self.sub_odom = rospy.Subscriber('/odom', Odometry, self.cbOdom, queue_size=1)
-        self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
-
 
         # publishes next mission
         self.pub_mission = rospy.Publisher('/mission', UInt8, queue_size=1)
         self.pub_mission_step = rospy.Publisher('/mission/intertsection', UInt8, queue_size=1)
         self.pub_fake_lane = rospy.Publisher('/control/lane', Float64, queue_size=1)
-        self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
+        self.pub_cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
-        # publishes traffic sign image in compressed type 
+        self.pub_bot_x = rospy.Publisher('/detect/lane_bot_x', UInt8, queue_size=1)
+        self.pub_top_y = rospy.Publisher('/detect/lane_top_y', UInt8, queue_size=1)
+        self.pub_lane_toggle = rospy.Publisher('/detect/lane_toggle', Bool, queue_size=1)
         self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
 
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
-        self.IntersectionStep = Enum('IntersectionStep', 'default start turn lane end')
+        self.IntersectionStep = Enum('IntersectionStep', 'default process done')
         self.current_step = self.IntersectionStep.default.value
         
         self.cvBridge = CvBridge()
@@ -76,7 +53,7 @@ class DetectSign():
 
     def fnPreproc(self):
         # Initiate SIFT detector
-        self.sift = cv2.xfeatures2d.SIFT_create()
+        self.sift = cv2.SIFT_create()
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dir_path = dir_path.replace('detect/nodes', 'detect/')
@@ -105,18 +82,21 @@ class DetectSign():
 
     def cbFindTrafficSign(self, image_msg):
         # drop the frame to 1/5 (6fps) because of the processing speed. This is up to your computer's operating power.
-        # if self.counter % 3 != 0:
+        # if self.counter % 2 != 0:
         #     self.counter += 1
         #     return
         # else:
         #     self.counter = 1
 
-        #converting compressed image to opencv image
+        # converting compressed image to opencv image
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # cv_image_input = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
-        MIN_MATCH_COUNT = 9 #9
+
+        MIN_MATCH_COUNT = 9 #12
         MIN_MSE_DECISION = 50000
 
         # find the keypoints and descriptors with SIFT
@@ -157,11 +137,11 @@ class DetectSign():
 
                 mse = self.fnCalcMSE(src_pts, dst_pts)
                 if mse < MIN_MSE_DECISION:
-                    rospy.loginfo("detect left sign")
                     image_out_num = 3
                     self.is_saw_left_count += 1
-                    if self.is_saw_left_count >= 5:
+                    if self.is_saw_left_count >= 2:
                         self.is_saw_left = True
+                        rospy.loginfo("detect left sign")
 
         if self.is_saw_right == False and self.is_saw_left == False:
             matches_right = self.flann.knnMatch(des1,self.des_right,k=2)
@@ -178,11 +158,11 @@ class DetectSign():
 
                 mse = self.fnCalcMSE(src_pts, dst_pts)
                 if mse < MIN_MSE_DECISION:
-                    rospy.loginfo("detect right sign")
                     image_out_num = 4
                     self.is_saw_right_count += 1
-                    if (self.is_saw_right_count >= 5):
+                    if (self.is_saw_right_count >= 2):
                         self.is_saw_right = True
+                        rospy.loginfo("detect right sign")
 
         if image_out_num == 1:
             # publishes traffic sign image in compressed type
@@ -221,109 +201,42 @@ class DetectSign():
             # publishes traffic sign image in compressed type
             self.pub_image_traffic_sign.publish(self.cvBridge.cv2_to_compressed_imgmsg(fianl_right, "jpg"))
 
-        # process
+        # intersection process
         if self.is_saw_intersection == True and self.current_step == self.IntersectionStep.default.value:
-            if self.current_orientation_w <= 0.33 and self.current_orientation_w >= -0.33 :
-                self.current_step = self.IntersectionStep.start.value
-                self.pub_mission_step.publish(self.current_step)
-                rospy.sleep(5)
+            if self.current_orientation_w <= 0.1 and self.current_orientation_w >= -0.1 :
+                self.current_step = self.IntersectionStep.process.value
+                self.pub_lane_toggle.publish(False)
+
+        if (self.is_saw_left == True or self.is_saw_right == True) and self.current_step == self.IntersectionStep.process.value:
+            # self.current_step = self.IntersectionStep.done.value
+            if self.is_saw_right == True:
+                # 90 , 40, 150, 120
+                self.pub_top_y.publish(40)
+                self.pub_bot_x.publish(140)
+                rospy.loginfo('RIGHT')
+                for x in range(0, 12):
+                    self.pub_fake_lane.publish(610)
+                    rospy.sleep(0.1)
+                self.pub_lane_toggle.publish(True)
+                rospy.sleep(10)
+                self.pub_lane_toggle.publish(False)
+                for x in range(0, 12):
+                    self.pub_fake_lane.publish(600)
+                    rospy.sleep(0.1)
+                self.pub_lane_toggle.publish(True)
                 
-                msg_moving = MovingParam()
-                msg_moving.moving_type=2
-                msg_moving.moving_value_angular=45
-                msg_moving.moving_value_linear=0
-                self.pub_moving.publish(msg_moving)
-                while True:
-                    if self.is_moving_complete == True:
-                        break
+            elif self.is_saw_left == True:
+                # 90 , 40, 100, 120
+                self.pub_top_y.publish(40)
+                self.pub_bot_x.publish(100)
+                rospy.loginfo('LEFT')
+                for x in range(0, 17):
+                    self.pub_fake_lane.publish(380)
+                    rospy.sleep(0.1)
+                self.pub_lane_toggle.publish(True)
 
-        if (self.is_saw_left == True or self.is_saw_right == True) and self.current_step == self.IntersectionStep.start.value:
-                self.current_step = self.IntersectionStep.turn.value
-                self.pub_mission_step.publish(self.current_step)
-                rospy.sleep(3)
-
-                if self.is_saw_right == True:
-
-                    # for x in range(460, 1000, 10):
-                    #     fake_lane = 500 - 220*math.sin(0.53*math.radians(x))
-                    #     self.pub_fake_lane.publish(fake_lane)
-                    #     rospy.sleep(0.1)
-                    # for x in range(460, 580, 10):
-                    #     fake_lane = 500 - 220*math.sin(0.53*math.radians(x))
-                    #     self.pub_fake_lane.publish(fake_lane)
-                    #     rospy.sleep(0.1)
-                    msg_moving = MovingParam()
-                    msg_moving.moving_type=4
-                    msg_moving.moving_value_angular=0
-                    msg_moving.moving_value_linear=0.15
-                    self.pub_moving.publish(msg_moving)
-                    while True:
-                        if self.is_moving_complete == True:
-                            break
-                    self.is_moving_complete = False
-
-                    rospy.sleep(3)
-
-                    msg_moving.moving_type=3
-                    msg_moving.moving_value_angular=90
-                    msg_moving.moving_value_linear=0.0
-                    self.pub_moving.publish(msg_moving)
-                    while True:
-                        if self.is_moving_complete == True:
-                            break
-                    self.is_moving_complete = False
-
-                    rospy.sleep(3)
-
-                    # self.current_step = self.IntersectionStep.lane.value
-                    # self.pub_mission_step.publish(self.current_step)
-                    self.current_mission = self.Mission.Construction.value
-                    self.pub_mission.publish(self.current_mission)
-                    
-                elif self.is_saw_left == True:
-
-                    # for x in range(120, 680, 10):
-                    #     fake_lane = 500 - 220*math.sin(0.53*math.radians(x))
-                    #     self.pub_fake_lane.publish(fake_lane)
-                    #     rospy.sleep(0.1)
-                    # for x in range(120, 260, 10):
-                    #     fake_lane = 500 - 220*math.sin(0.53*math.radians(x))
-                    #     self.pub_fake_lane.publish(fake_lane)
-                    #     rospy.sleep(0.1)
-                    msg_moving = MovingParam()
-                    msg_moving.moving_type=4
-                    msg_moving.moving_value_angular=0
-                    msg_moving.moving_value_linear=0.15
-                    self.pub_moving.publish(msg_moving)
-                    while True:
-                        if self.is_moving_complete == True:
-                            break
-                    self.is_moving_complete = False
-
-                    rospy.sleep(3)
-
-                    msg_moving.moving_type=2
-                    msg_moving.moving_value_angular=90
-                    msg_moving.moving_value_linear=0.0
-                    self.pub_moving.publish(msg_moving)
-                    while True:
-                        if self.is_moving_complete == True:
-                            break
-                    self.is_moving_complete = False
-
-                    rospy.sleep(3)
-
-                    # self.current_step = self.IntersectionStep.end.value
-                    # self.pub_mission_step.publish(self.current_step)
-                    self.current_mission = self.Mission.Construction.value
-                    self.pub_mission.publish(self.current_mission)
-        
-        # if self.current_step == self.IntersectionStep.lane.value:
-        #     self.current_step = self.IntersectionStep.end.value
-                
-        # if self.current_step == self.IntersectionStep.end.value:
-        #     self.current_mission = self.Mission.Construction.value
-        #     self.pub_mission.publish(self.current_mission)
+            # go to next mission
+            self.pub_mission.publish(self.Mission.Construction.value)
 
     def main(self):
         rospy.spin()
@@ -332,22 +245,3 @@ if __name__ == '__main__':
     rospy.init_node('detect_intersection')
     node = DetectSign()
     node.main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

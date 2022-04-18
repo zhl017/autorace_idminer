@@ -1,5 +1,7 @@
 <launch>
 
-    <node pkg="detect" type="detect_parking" name="detect_parking" output="screen"/>
+    <node pkg="detect" type="detect_parking" name="detect_parking" output="screen">
+        <remap from="/image_input" to="/camera/image/compressed"/>
+    </node>
     
 </launch>

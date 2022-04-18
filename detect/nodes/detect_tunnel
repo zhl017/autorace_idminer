@@ -39,7 +39,7 @@ class DetectSign():
         self.fnPreproc()
 
         # subscribes compressed image   
-        self.sub_image_original = rospy.Subscriber('/camera/image/compressed', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
+        self.sub_img = rospy.Subscriber('/image_input', CompressedImage, self.cbFindTrafficSign, queue_size = 1)
         self.sub_moving_completed = rospy.Subscriber('/control/moving/complete', UInt8, self.cbMovingComplete, queue_size = 1)
         
         self.sub_odom = rospy.Subscriber('/odom', Odometry, self.cbOdom, queue_size=1)
@@ -62,7 +62,7 @@ class DetectSign():
 
 
         self.Mission = Enum('Mission', 'Idle TrafficLight Intersection Construction Parking LevelCrossing Tunnel')
-        self.TunnelStep = Enum('TunnelStep', 'default start turn lane end')
+        self.TunnelStep = Enum('TunnelStep', 'default process nav end')
         self.current_step_tunel = self.TunnelStep.default.value
         
         self.cvBridge = CvBridge()
@@ -88,7 +88,7 @@ class DetectSign():
 
     def fnPreproc(self):
         # Initiate SIFT detector
-        self.sift = cv2.xfeatures2d.SIFT_create()
+        self.sift = cv2.SIFT_create()
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
         dir_path = dir_path.replace('detect/nodes', 'detect/')
@@ -122,9 +122,11 @@ class DetectSign():
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         cv_image_input = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # converting raw image to opencv image
+        # cv_image_input = CvBridge.imgmsg_to_cv2(image_msg, "bgr8")
 
-        MIN_MATCH_COUNT = 9 #9
-        MIN_MSE_DECISION = 50000
+        MIN_MATCH_COUNT = 7 #9
+        MIN_MSE_DECISION = 30000
 
         # find the keypoints and descriptors with SIFT
         kp1, des1 = self.sift.detectAndCompute(cv_image_input,None)
@@ -168,7 +170,9 @@ class DetectSign():
 
         if self.is_saw_tunnel == True and self.counter == 2:
 
-            rospy.sleep(5)
+            self.pub_mission_tunnel.publish(self.TunnelStep.process.value)
+
+            rospy.sleep(2)
 
             rospy.loginfo("[Tunnel] MOTION...")
 
@@ -184,16 +188,15 @@ class DetectSign():
 
             self.fnStop()
 
-            self.current_step_tunnel = self.TunnelStep.start.value
-            self.pub_mission_tunnel.publish(self.current_step_tunnel)
+            self.pub_mission_tunnel.publish(self.TunnelStep.nav.value)
 
             rospy.loginfo("[TUNNEL] NAVIGATION...")
-            initialPose = PoseWithCovarianceStamped()
-            initialPose.header.frame_id = "map"
-            initialPose.header.stamp = rospy.Time.now()
-            initialPose.pose.pose = self.odom_msg.pose.pose
+            # initialPose = PoseWithCovarianceStamped()
+            # initialPose.header.frame_id = "map"
+            # initialPose.header.stamp = rospy.Time.now()
+            # initialPose.pose.pose = self.odom_msg.pose.pose
 
-            #self.pub_init_pose.publish(initialPose)
+            # self.pub_init_pose.publish(initialPose)
             rospy.sleep(3)
 
             self.fnPubGoalPose()
@@ -214,12 +217,13 @@ class DetectSign():
             self.start_pos_y = self.current_pos_y
 
             while True:
-                error = self.fnStraight(0.15)
+                error = self.fnStraight(0.14)
 
                 if math.fabs(error) < 0.005:
                     break
 
             self.fnStop()
+            
             self.current_step_tunnel = self.TunnelStep.end.value
             self.pub_mission_tunnel.publish(self.current_step_tunnel)
 
@@ -254,7 +258,7 @@ class DetectSign():
         goalPoseStamped.header.frame_id = "map"
         goalPoseStamped.header.stamp = rospy.Time.now()
 
-        goalPoseStamped.pose.position.x = 0.15
+        goalPoseStamped.pose.position.x = -0.3
         goalPoseStamped.pose.position.y = -1.74
         goalPoseStamped.pose.position.z = 0.0
 
@@ -278,12 +282,12 @@ class DetectSign():
         self.lastError = err_pos
 
         twist = Twist()
-        twist.linear.x = 0.07
+        twist.linear.x = 0.15
         twist.linear.y = 0
         twist.linear.z = 0
         twist.angular.x = 0
         twist.angular.y = 0
-        twist.angular.z = 0
+        twist.angular.z = 0.03
         self.pub_cmd_vel.publish(twist)
 
         return err_pos

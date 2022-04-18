@@ -1,26 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
- 
-################################################################################
-# Copyright 2018 ROBOTIS CO., LTD.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-################################################################################
-
-# Author: Leon Jung, Gilbert, Ashe Kim
 
 import rospy
-import numpy as np
 from std_msgs.msg import Float64
 from geometry_msgs.msg import Twist
 
@@ -43,16 +24,22 @@ class ControlLane():
 
         error = center - 500
 
-        # Kp = 0.0025
-        # Kd = 0.007
-        Kp = 0.0013
+        # default value
+        # Kp = 0.0013
+        # Kd = 0.009
+
+        # gazebo value
+        # Kp = 0.009
+        # Kd = 0.03
+
+        # true value
+        Kp = 0.009
         Kd = 0.009
 
         angular_z = Kp * error + Kd * (error - self.lastError)
         self.lastError = error
         twist = Twist()
         twist.linear.x = min(self.MAX_VEL * ((1 - abs(error) / 1200) ** 2.2), 0.2)
-        # twist.linear.x = self.MAX_VEL
         twist.linear.y = 0
         twist.linear.z = 0
         twist.angular.x = 0
