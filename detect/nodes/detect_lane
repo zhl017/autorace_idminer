@@ -90,8 +90,7 @@ class DetectLane():
         return config
 
     def cbImageProjection(self, msg_img):
-
-        # photo use 1/2 fps
+        # drop the frame to 1/5 (6fps) because of the processing speed. This is up to your computer's operating power.
         # if self.counter % 2 != 0:
         #     self.counter += 1
         #     return
