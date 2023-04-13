@@ -9,4 +9,5 @@
     <remap from="/cv_camera/camera_info" to="/camera/camera_info"/>
     <remap from="/cv_camera/image_raw" to="/camera/image"/>
   </node>
+
 </launch>
