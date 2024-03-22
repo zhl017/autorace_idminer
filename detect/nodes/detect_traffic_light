@@ -155,7 +155,8 @@ class DetectTrafficLight():
                     self.stop_count = 0
 
         if self.green_count >= 5:
-            self.is_traffic_light_finished = True
+            if self.calibration_mode == False:
+                self.is_traffic_light_finished = True
 
             # msg_pub_max_vel = Float64()
             # msg_pub_max_vel.data = 0.12
@@ -164,11 +165,12 @@ class DetectTrafficLight():
             rospy.loginfo("GREEN")
             cv2.putText(self.cv_image,"GREEN", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5, (80, 255, 0))
 
-            twist = Twist()
-            twist.linear.x = 0.3
-            for x in range(0, 5):
-                self.pub_cmd_vel.publish(twist)
-                rospy.sleep(0.2)
+            if self.calibration_mode == False:
+                twist = Twist()
+                twist.linear.x = 0.3
+                for x in range(0, 5):
+                    self.pub_cmd_vel.publish(twist)
+                    rospy.sleep(0.2)
             
             # go to next mission
             self.pub_mission.publish(self.Mission.Intersection.value)
