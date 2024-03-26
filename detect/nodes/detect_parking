@@ -4,7 +4,7 @@
 import rospy, os, cv2, math
 import numpy as np
 from enum import Enum
-from std_msgs.msg import UInt8, Float64
+from std_msgs.msg import UInt8, Float64, Bool
 from sensor_msgs.msg import CompressedImage, LaserScan
 from cv_bridge import CvBridge
 from nav_msgs.msg import Odometry
@@ -43,6 +43,9 @@ class DetectSign():
         self.pub_moving = rospy.Publisher('/control/moving/state', MovingParam, queue_size= 1)
         self.pub_cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
+        self.pub_lane_toggle = rospy.Publisher('/detect/lane_toggle', Bool, queue_size=1)
+        self.pub_white_toggle = rospy.Publisher('/detect/white_toggle', Bool, queue_size=1)
+
         # publishes traffic sign image in compressed type 
         self.pub_image_traffic_sign = rospy.Publisher('/detect/sign/compressed', CompressedImage, queue_size = 1)
 
@@ -53,23 +56,23 @@ class DetectSign():
     def cbScanObstacle(self, scan):
         angle_scan = 30
 
-        scan_start_left = 90 - angle_scan
-        scan_end_left = 90 + angle_scan
+        scan_start_left = 45 - angle_scan
+        scan_end_left = 45 + angle_scan
 
-        scan_start_right = 270 - angle_scan
-        scan_end_right = 270 + angle_scan
+        scan_start_right = 315 - angle_scan
+        scan_end_right = 315 + angle_scan
 
         threshold_distance = 0.5
 
         if self.start_obstacle_detection == True:
             for i in range(scan_start_left, scan_end_left):
-                if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.01:
+                if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.3:
                     self.is_obstacle_detected_L = True
                     rospy.loginfo("left detected")
             
 
             for i in range(scan_start_right, scan_end_right):
-                if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.01:
+                if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.3:
                     self.is_obstacle_detected_R = True
                     rospy.loginfo("right detected")
 
@@ -140,6 +143,7 @@ class DetectSign():
                     rospy.loginfo("detect parking")
                     image_out_num = 2
                     self.is_saw_parking = True
+                    self.pub_white_toggle.publish(False)
 
         if image_out_num == 1:
             # publishes traffic sign image in compressed type
@@ -161,65 +165,68 @@ class DetectSign():
 
             self.pub_mission_parking.publish(self.ParkingStep.process.value)
 
-            rospy.loginfo("[PARKING] MOTION...")
-            msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.00
-            self.pub_max_vel.publish(msg_pub_max_vel)
-            self.pub_cmd_vel.publish(Twist())
+            rospy.sleep(10)
 
-            rospy.sleep(3)
+            # rospy.loginfo("[PARKING] MOTION...")
+            # msg_pub_max_vel = Float64()
+            # msg_pub_max_vel.data = 0.00
+            # self.pub_max_vel.publish(msg_pub_max_vel)
+            # self.pub_cmd_vel.publish(Twist())
+
+            # rospy.sleep(3)
             
-            rospy.loginfo("[PARKING] L")
-            msg_moving = MovingParam()
-            msg_moving.moving_type=2
-            msg_moving.moving_value_angular=2
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
+            # rospy.loginfo("[PARKING] L")
+            # msg_moving = MovingParam()
+            # msg_moving.moving_type=2
+            # msg_moving.moving_value_angular=2
+            # msg_moving.moving_value_linear=0.0
+            # self.pub_moving.publish(msg_moving)
+            # while True:
+            #     if self.is_moving_complete == True:
+            #         break
+            # self.is_moving_complete = False
 
-            rospy.sleep(1)
+            # rospy.sleep(1)
 
-            rospy.loginfo("[PARKING] S")
-            msg_moving = MovingParam()
-            msg_moving.moving_type= 4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=0.75
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
+            # rospy.loginfo("[PARKING] S")
+            # msg_moving = MovingParam()
+            # msg_moving.moving_type= 4
+            # msg_moving.moving_value_angular=0.0
+            # msg_moving.moving_value_linear=0.75
+            # self.pub_moving.publish(msg_moving)
+            # while True:
+            #     if self.is_moving_complete == True:
+            #         break
+            # self.is_moving_complete = False
 
-            rospy.sleep(1)
+            # rospy.sleep(1)
 
-            rospy.loginfo("[PARKING] L")
-            msg_moving = MovingParam()
-            msg_moving.moving_type=2
-            msg_moving.moving_value_angular=91
-            msg_moving.moving_value_linear=0.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
+            # rospy.loginfo("[PARKING] L")
+            # msg_moving = MovingParam()
+            # msg_moving.moving_type=2
+            # msg_moving.moving_value_angular=91
+            # msg_moving.moving_value_linear=0.0
+            # self.pub_moving.publish(msg_moving)
+            # while True:
+            #     if self.is_moving_complete == True:
+            #         break
+            # self.is_moving_complete = False
 
-            rospy.sleep(1)
+            # rospy.sleep(1)
 
-            rospy.loginfo("[PARKING] S2")
-            msg_moving.moving_type= 4
-            msg_moving.moving_value_angular=0.0
-            msg_moving.moving_value_linear=1.0
-            self.pub_moving.publish(msg_moving)
-            while True:
-                if self.is_moving_complete == True:
-                    break
-            self.is_moving_complete = False
+            # rospy.loginfo("[PARKING] S2")
+            # msg_moving.moving_type= 4
+            # msg_moving.moving_value_angular=0.0
+            # msg_moving.moving_value_linear=1.0
+            # self.pub_moving.publish(msg_moving)
+            # while True:
+            #     if self.is_moving_complete == True:
+            #         break
+            # self.is_moving_complete = False
 
-            rospy.sleep(5)
+            # rospy.sleep(5)
 
+            self.pub_lane_toggle.publish(False)
             self.start_obstacle_detection = True
 
             while True:
@@ -233,6 +240,17 @@ class DetectSign():
                 rospy.loginfo("[PARKING] RIGHT_CLEAR")
                 msg_moving = MovingParam()
 
+                rospy.loginfo("[PARKING] S")
+                msg_moving.moving_type= 4
+                msg_moving.moving_value_angular=0.0
+                msg_moving.moving_value_linear=0.3
+                self.pub_moving.publish(msg_moving)
+                while True:
+                    if self.is_moving_complete == True:
+                        break
+                self.is_moving_complete = False
+                rospy.sleep(2)
+
                 rospy.loginfo("[PARKING] R")
                 msg_moving.moving_type=3
                 msg_moving.moving_value_angular=90
@@ -242,8 +260,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(1)
+                rospy.sleep(2)
 
                 rospy.loginfo("[PARKING] S")
                 msg_moving.moving_type= 4
@@ -254,8 +271,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(3)
+                rospy.sleep(5)
                 
                 rospy.loginfo("[PARKING] B")
                 msg_moving.moving_type= 5
@@ -266,8 +282,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(1)
+                rospy.sleep(2)
 
                 rospy.loginfo("[PARKING] R")
                 msg_moving.moving_type= 3
@@ -283,6 +298,17 @@ class DetectSign():
                 rospy.loginfo("[PARKING] LEFT_CLEAR")
                 msg_moving = MovingParam()
 
+                rospy.loginfo("[PARKING] S")
+                msg_moving.moving_type= 4
+                msg_moving.moving_value_angular=0.0
+                msg_moving.moving_value_linear=0.3
+                self.pub_moving.publish(msg_moving)
+                while True:
+                    if self.is_moving_complete == True:
+                        break
+                self.is_moving_complete = False
+                rospy.sleep(2)
+
                 rospy.loginfo("[PARKING] L")
                 msg_moving.moving_type=2
                 msg_moving.moving_value_angular=90
@@ -292,8 +318,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(1)
+                rospy.sleep(2)
 
                 rospy.loginfo("[PARKING] S")
                 msg_moving.moving_type= 4
@@ -304,8 +329,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(3)
+                rospy.sleep(5)
                 
                 rospy.loginfo("[PARKING] B")
                 msg_moving.moving_type= 5
@@ -316,8 +340,7 @@ class DetectSign():
                     if self.is_moving_complete == True:
                         break
                 self.is_moving_complete = False
-
-                rospy.sleep(1)
+                rospy.sleep(2)
 
                 rospy.loginfo("[PARKING] L")
                 msg_moving.moving_type= 2
@@ -329,7 +352,7 @@ class DetectSign():
                         break
                 self.is_moving_complete = False
         
-            rospy.sleep(1)
+            rospy.sleep(2)
 
             rospy.loginfo("[PARKING] GO OUT...")
 
@@ -342,8 +365,7 @@ class DetectSign():
                 if self.is_moving_complete == True:
                     break
             self.is_moving_complete = False
-
-            rospy.sleep(1)
+            rospy.sleep(2)
 
             rospy.loginfo("[PARKING] L")
             msg_moving.moving_type=2
@@ -354,8 +376,11 @@ class DetectSign():
                 if self.is_moving_complete == True:
                     break  
             self.is_moving_complete = False
+            rospy.sleep(2)
 
             rospy.loginfo("[PARKING] FINISH...")
+            self.pub_white_toggle.publish(True)
+            self.pub_lane_toggle.publish(True)
 
             # go to next mission
             self.pub_mission.publish(self.Mission.LevelCrossing.value)
