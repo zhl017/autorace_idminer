@@ -29,7 +29,7 @@ class CoreNodeController():
         self.is_triggered = False
         self.current_mode = self.Mission.Idle.value
         # self.current_step_intersection = self.IntersectionStep.default.value
-        self.current_setp_turtlesim = self.TurtlesimStep.turtlesim.value
+        self.current_step_turtlesim = self.TurtlesimStep.turtlesim.value
 
         # launcher enum
         self.Launcher = Enum('Launcher', 'turtlesim turtleteleop')
@@ -60,7 +60,7 @@ class CoreNodeController():
     #     self.is_triggered = True
 
     def cbTurtleStep(self, mode_msg):
-        self.current_setp_turtlesim = mode_msg.data
+        self.current_step_turtlesim = mode_msg.data
         self.is_triggered = True
 
     def fnControlNode(self):
@@ -68,11 +68,11 @@ class CoreNodeController():
         # example
         if self.current_mode == self.Mission.OpenTurtleSim.value:
 
-            if self.current_setp_turtlesim == self.TurtlesimStep.turtlesim.value:
+            if self.current_step_turtlesim == self.TurtlesimStep.turtlesim.value:
                 rospy.loginfo("OPEN TURTLESIM")
                 self.fnLaunch(self.Launcher.turtlesim.value, True)
 
-            elif self.current_setp_turtlesim == self.TurtlesimStep.turtleteleop.value:
+            elif self.current_step_turtlesim == self.TurtlesimStep.turtleteleop.value:
                 rospy.loginfo("OPEN TURTLE_TELEOP")
                 self.fnLaunch(self.Launcher.turtleteleop.value, True)
 
@@ -80,7 +80,7 @@ class CoreNodeController():
             rospy.loginfo("CLOSE TURTLESIM")
             self.fnLaunch(self.Launcher.turtlesim.value, False)
             self.fnLaunch(self.Launcher.turtlesim.value, False)
-            self.current_setp_turtlesim = self.TurtlesimStep.turtlesim.value
+            self.current_step_turtlesim = self.TurtlesimStep.turtlesim.value
 
                     
         self.is_triggered = False
