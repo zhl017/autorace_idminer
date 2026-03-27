@@ -1,0 +1,24 @@
+---
+/detect_lane:
+  ros__parameters:
+    camera:
+      top_x: 120
+      top_y: 20
+      bottom_x: 150
+      bottom_y: 100
+    detect:
+      lane:
+        white:
+          hue_h: 179
+          hue_l: 0
+          lightness_h: 255
+          lightness_l: 230
+          saturation_h: 50
+          saturation_l: 0
+        yellow:
+          hue_h: 127
+          hue_l: 10
+          lightness_h: 255
+          lightness_l: 95
+          saturation_h: 255
+          saturation_l: 70

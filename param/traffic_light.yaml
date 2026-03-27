@@ -1,0 +1,24 @@
+---
+/detect_traffic_light:
+  ros__parameters:
+        red:
+          hue_l: 80
+          hue_h: 179
+          saturation_l: 200
+          saturation_h: 255
+          lightness_l: 200
+          lightness_h: 255
+        yellow:
+          hue_l: 80
+          hue_h: 179
+          saturation_l: 200
+          saturation_h: 255
+          lightness_l: 200
+          lightness_h: 255
+        green:
+          hue_l: 57
+          hue_h: 105
+          saturation_l: 183
+          saturation_h: 255
+          lightness_l: 100
+          lightness_h: 255

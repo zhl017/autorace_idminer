@@ -1,5 +1,0 @@
-<launch>
-
-    <node pkg="core" type="core_node_controller" name="core_node_controller" output="screen" />
-
-</launch>

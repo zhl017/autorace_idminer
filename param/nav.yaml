@@ -1,0 +1,21 @@
+---
+/detect_tunnel:
+  ros__parameters:
+    init_pose:
+      position:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+      orientation:
+        x: 0.0
+        y: 0.0
+        yaw: 0
+    goal_pose:
+      position:
+        x: 0.885
+        y: 0.904
+        z: 0.0
+      orientation:
+        x: 0.0
+        y: 0.0
+        yaw: 90

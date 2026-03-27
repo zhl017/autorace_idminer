@@ -1,0 +1,10 @@
+---
+/detect_level:
+    ros__parameters:
+      red:
+        hue_l: 50
+        hue_h: 179
+        saturation_l: 150
+        saturation_h: 255
+        lightness_l: 50
+        lightness_h: 255

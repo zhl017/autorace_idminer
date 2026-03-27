@@ -1,7 +1,0 @@
-<launch>
-  <!-- tunnel detection -->
-  <node pkg="detect" type="detect_tunnel" name="detect_tunnel" output="screen">
-    <remap from="/control/cmd_vel" to="/cmd_vel" />
-    <remap from="/image_input" to="/camera/image/compressed"/>
-  </node>
-</launch>
